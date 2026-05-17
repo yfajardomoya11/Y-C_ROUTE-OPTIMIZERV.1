@@ -1,0 +1,10 @@
+# Core Engine
+fastapi==0.111.0
+uvicorn==0.30.1
+ortools==9.10.4067  # Google OR-Tools para VRP 
+
+# Security & DevSecOps
+python-jose[cryptography]==3.3.0  # JWT con AES-256 
+passlib[bcrypt]==1.7.4
+bandit==1.7.9  # SAST: Análisis estático de seguridad 
+python-dotenv==1.0.1  # Zero-Leak Policy para secretos 

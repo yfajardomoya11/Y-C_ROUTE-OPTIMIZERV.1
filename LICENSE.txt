@@ -1,0 +1,5 @@
+Copyright (c) 2026 Yananth Andrés Fajardo Moya. Todos los derechos reservados.
+
+Queda estrictamente prohibida la reproducción, distribución, modificación o uso total o parcial de este código fuente y sus binarios asociados sin la autorización previa y por escrito del titular del derecho de autor.
+
+Este software se proporciona exclusivamente para fines de revisión y fase de prueba técnica dentro de esta plataforma.
