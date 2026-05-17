@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Sentinel Shield V5 - Fleet Optimizer 🚀
 
 Sistema de optimización logística diseñado para la gestión masiva de entregas en la zona de Occidente, Costa Rica.
@@ -9,3 +10,7 @@ Sistema de optimización logística diseñado para la gestión masiva de entrega
 - **Motor de Cálculo:** Google OR-Tools (VRP Solver).
 - **Interfaz:** Mapa interactivo con Leaflet.js y Backend en FastAPI.
 
+=======
+# Y-C_ROUTE-OPTIMIZERV.1
+OPTIMIZADOR DE RUTAS 
+>>>>>>> 9e1d2da1d97f5c0a600c8b99e488f12f9c7db31b
