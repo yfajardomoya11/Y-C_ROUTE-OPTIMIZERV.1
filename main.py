@@ -1426,30 +1426,102 @@ function wazeUrl(lat, lon) {
     return `https://waze.com/ul?ll=${parseFloat(lat).toFixed(6)},${parseFloat(lon).toFixed(6)}&navigate=yes`;
 }
 
-// === WHATSAPP — envía la ruta completa al chofer ===
-function sendWhatsApp(vehicleId) {
+// === GOOGLE MAPS URL — una parada, abre navegación ===
+function gMapsUrl(lat, lon) {
+    return `https://maps.google.com/maps?daddr=${parseFloat(lat).toFixed(6)},${parseFloat(lon).toFixed(6)}&dirflg=d`;
+}
+
+// === MENSAJE DE RUTA (reutilizable) ===
+function buildRouteMessage(vehicleId, app) {
     const state = navState[vehicleId];
-    if (!state || state.stops.length === 0) return;
+    if (!state || state.stops.length === 0) return null;
 
     const fecha = new Date().toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
+    const urlFn = app === 'maps' ? gMapsUrl : wazeUrl;
+    const appLabel = app === 'maps' ? 'Google Maps' : 'Waze';
 
     let msg = `🚚 *RUTA UNIDAD ${vehicleId} — ${fecha.toUpperCase()}*\n`;
     msg += `📍 *${state.stops.length} paradas* | Salida: Base Palmares\n`;
     msg += `─────────────────────\n`;
 
     state.stops.forEach((stop, i) => {
-        const url = wazeUrl(stop.lat, stop.lon);
         msg += `\n*${i + 1}.* ${stop.nombre}\n`;
-        msg += `👉 ${url}\n`;
+        msg += `👉 ${urlFn(stop.lat, stop.lon)}\n`;
     });
 
     msg += `\n─────────────────────\n`;
     msg += `🏁 *Al terminar, regresá a base:*\n`;
-    msg += `👉 ${wazeUrl(10.0605, -84.4372)}\n`;
-    msg += `\n_Cada link abre Waze directo en esa parada._`;
+    msg += `👉 ${urlFn(10.0605, -84.4372)}\n`;
+    msg += `\n_Cada link abre ${appLabel} directo en esa parada._`;
+    return msg;
+}
 
+// === WHATSAPP · WAZE ===
+function sendWhatsApp(vehicleId) {
+    const msg = buildRouteMessage(vehicleId, 'waze');
+    if (!msg) return;
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
+}
+
+// === WHATSAPP · GOOGLE MAPS ===
+function sendGoogleMaps(vehicleId) {
+    const msg = buildRouteMessage(vehicleId, 'maps');
+    if (!msg) return;
+    // Copiar al portapapeles + abrir WhatsApp como canal de envío
+    navigator.clipboard.writeText(msg.replace(/\*/g, '')).catch(() => {});
+    // Mostrar modal con el mensaje y opciones
+    showShareModal(vehicleId, msg);
+}
+
+// === MODAL DE COMPARTIR MAPS ===
+function showShareModal(vehicleId, msg) {
+    // Eliminar modal anterior si existe
+    const old = document.getElementById('share-modal');
+    if (old) old.remove();
+
+    const plain = msg.replace(/\*/g, '').replace(/_/g, '');
     const encoded = encodeURIComponent(msg);
-    window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener');
+
+    const modal = document.createElement('div');
+    modal.id = 'share-modal';
+    modal.style.cssText = `
+        position:fixed;inset:0;background:rgba(2,12,24,0.85);z-index:9999;
+        display:flex;align-items:center;justify-content:center;padding:1rem;`;
+    modal.innerHTML = `
+        <div style="background:#071525;border:1px solid #1a4a70;border-radius:10px;
+            max-width:480px;width:100%;padding:1.5rem;position:relative;">
+            <div style="font-family:'Orbitron',monospace;font-size:0.8rem;color:#00d4ff;
+                letter-spacing:0.1em;margin-bottom:1rem;">
+                🗺 RUTA UNIDAD ${vehicleId} — GOOGLE MAPS
+            </div>
+            <div style="font-family:'Space Mono',monospace;font-size:0.55rem;color:#5a7a90;
+                margin-bottom:0.8rem;line-height:1.8;max-height:220px;overflow-y:auto;
+                background:#040b14;border:1px solid #0d2d4a;border-radius:5px;padding:0.8rem;
+                white-space:pre-wrap;word-break:break-all;">
+${plain}</div>
+            <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
+                <button onclick="
+                    navigator.clipboard.writeText(document.querySelector('#share-modal pre, #share-modal div:nth-child(3)').innerText || '${plain.replace(/'/g,"\\'")}');
+                    this.textContent='✅ Copiado!';setTimeout(()=>this.textContent='📋 Copiar texto',2000);"
+                    class="btn-maps" style="border-color:#5a7a90;color:#5a7a90;">
+                    📋 Copiar texto
+                </button>
+                <button onclick="window.open('https://wa.me/?text=${encodeURIComponent(buildRouteMessage(vehicleId,\'maps\'))}','_blank','noopener')"
+                    class="btn-maps" style="background:rgba(37,211,102,0.15);border-color:#25d366;color:#25d366;">
+                    📲 WhatsApp
+                </button>
+                <button onclick="window.open('https://t.me/share/url?url=.&text=${encodeURIComponent(buildRouteMessage(vehicleId,\'maps\'))}','_blank','noopener')"
+                    class="btn-maps" style="background:rgba(0,136,204,0.15);border-color:#0088cc;color:#0088cc;">
+                    ✈️ Telegram
+                </button>
+                <button onclick="document.getElementById('share-modal').remove()"
+                    class="btn-maps" style="border-color:#ff3366;color:#ff3366;margin-left:auto;">
+                    ✕ Cerrar
+                </button>
+            </div>
+        </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
 // Estado de navegación por unidad
@@ -1584,10 +1656,16 @@ function renderRoutes(data, deliveries) {
                         </span>
                     </div>
                 </div>
-                <button onclick="sendWhatsApp(${vehicleId})" class="btn-maps"
-                    style="background:rgba(37,211,102,0.15);border-color:#25d366;color:#25d366;font-size:0.6rem;padding:0.5rem 0.9rem;">
-                    📲 Enviar a chofer
-                </button>
+                <div style="display:flex;flex-direction:column;gap:0.4rem;align-items:flex-end;">
+                    <button onclick="sendWhatsApp(${vehicleId})" class="btn-maps"
+                        style="background:rgba(37,211,102,0.15);border-color:#25d366;color:#25d366;width:100%;">
+                        📲 WhatsApp · Waze
+                    </button>
+                    <button onclick="sendGoogleMaps(${vehicleId})" class="btn-maps"
+                        style="background:rgba(234,67,53,0.15);border-color:#ea4335;color:#ea4335;width:100%;">
+                        📲 WhatsApp · Maps
+                    </button>
+                </div>
             </div>
             <div id="nav-panel-${vehicleId}"></div>
             ${rt.stop_info && rt.stop_info.length > 0 ? `
