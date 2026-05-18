@@ -1421,19 +1421,22 @@ function parseInput(raw) {
     return deliveries;
 }
 
-// === GOOGLE MAPS URL — abre navegación paso a paso ===
+// === GOOGLE MAPS URL ===
+// Formato saddr/daddr con +to: encadenado — activa navegación real en móvil y desktop
 function buildMapsUrl(depot, waypoints) {
     const fmt = c => `${parseFloat(c[0]).toFixed(6)},${parseFloat(c[1]).toFixed(6)}`;
-    const depotStr = fmt(depot);
 
-    if (waypoints.length === 0) {
-        return `https://www.google.com/maps/dir/?api=1&origin=${depotStr}&destination=${depotStr}&travelmode=driving`;
+    const origin = fmt(depot);
+    const wps = waypoints.slice(0, 22); // saddr + hasta 23 daddr total
+
+    if (wps.length === 0) {
+        // Sin paradas intermedias: ir al depot y volver
+        return `https://maps.google.com/maps?saddr=${origin}&daddr=${origin}&dirflg=d`;
     }
 
-    const wps = waypoints.slice(0, 23);
-    const allPoints = [depot, ...wps, depot];
-    const path = allPoints.map(fmt).join('/');
-    return `https://www.google.com/maps/dir/${path}`;
+    // daddr encadena todas las paradas + regreso al depot con +to:
+    const destinations = [...wps.map(fmt), origin].join('+to:');
+    return `https://maps.google.com/maps?saddr=${origin}&daddr=${destinations}&dirflg=d`;
 }
 
 function openMaps(url) {
