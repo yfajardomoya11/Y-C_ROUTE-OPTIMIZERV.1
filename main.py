@@ -566,6 +566,50 @@ async def gui():
             75%  { transform: translateX(6px); }
         }
 
+        /* === RESPONSIVE MÓVIL === */
+        @media (max-width: 700px) {
+            .login-panel {
+                flex-direction: column;
+                width: 94vw;
+                min-height: unset;
+                border-radius: 10px;
+            }
+
+            .login-left {
+                padding: 1.5rem;
+                border-right: none;
+                border-bottom: 1px solid rgba(0,212,255,0.12);
+            }
+
+            .ll-hero { padding: 1rem 0; }
+
+            .ll-tagline { font-size: 1.1rem; }
+
+            .ll-desc { display: none; }
+
+            .ll-stats { gap: 0.5rem; }
+
+            .ll-stat { padding: 0.5rem 0.6rem; }
+
+            .ll-stat-num { font-size: 0.85rem; }
+
+            .ll-footer { display: none; }
+
+            .login-right {
+                width: 100%;
+                padding: 1.5rem;
+            }
+
+            .lr-title { font-size: 0.85rem; }
+        }
+
+        @media (max-width: 400px) {
+            .ll-logo { gap: 0.5rem; }
+            .ll-icon { width: 36px; height: 36px; font-size: 1rem; }
+            .ll-brand { font-size: 0.75rem; }
+            .ll-stats { flex-wrap: wrap; }
+        }
+
         /* === DASHBOARD === */
         #dash {
             display: none;
@@ -999,6 +1043,46 @@ async def gui():
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: var(--bg); }
         ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+        /* === DASHBOARD RESPONSIVE === */
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+                padding: 0.75rem;
+                gap: 0.75rem;
+            }
+
+            .left-panel {
+                max-height: unset;
+                overflow-y: visible;
+            }
+
+            .map-container {
+                min-height: 340px;
+                height: 55vw;
+                max-height: 420px;
+            }
+
+            .topbar {
+                padding: 0.65rem 1rem;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+
+            .brand-name { font-size: 0.75rem; }
+            .brand-sub  { display: none; }
+
+            .stats-bar { gap: 0.3rem; }
+            .stat-chip { padding: 0.25rem 0.55rem; font-size: 0.5rem; }
+
+            textarea#inp { height: 160px; }
+        }
+
+        @media (max-width: 480px) {
+            .topbar { justify-content: space-between; }
+            .stat-chip:nth-child(3) { display: none; }
+            .map-container { height: 280px; min-height: 280px; }
+        }
     </style>
 </head>
 <body>
