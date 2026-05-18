@@ -921,6 +921,7 @@ async def gui():
             letter-spacing: 0.08em;
             transition: all 0.2s;
             white-space: nowrap;
+            cursor: pointer;
         }
         .btn-maps:hover {
             background: rgba(29, 78, 216, 0.5);
@@ -1421,15 +1422,22 @@ function parseInput(raw) {
 }
 
 // === GOOGLE MAPS URL — abre navegación paso a paso ===
-// Usa el formato "dirección múltiple" que funciona en móvil y desktop
 function buildMapsUrl(depot, waypoints) {
-    // Google Maps URL con múltiples destinos encadenados (no necesita API key)
-    // Formato: /maps/dir/origen/wp1/wp2/.../destino_final
-    // Límite práctico: ~25 puntos totales
+    const fmt = c => `${parseFloat(c[0]).toFixed(6)},${parseFloat(c[1]).toFixed(6)}`;
+    const depotStr = fmt(depot);
 
-    const all = [depot, ...waypoints.slice(0, 23), depot];
-    const parts = all.map(c => `${c[0]},${c[1]}`);
-    return "https://www.google.com/maps/dir/" + parts.join('/');
+    if (waypoints.length === 0) {
+        return `https://www.google.com/maps/dir/?api=1&origin=${depotStr}&destination=${depotStr}&travelmode=driving`;
+    }
+
+    const wps = waypoints.slice(0, 23);
+    const allPoints = [depot, ...wps, depot];
+    const path = allPoints.map(fmt).join('/');
+    return `https://www.google.com/maps/dir/${path}`;
+}
+
+function openMaps(url) {
+    window.open(url, '_blank', 'noopener');
 }
 
 // === OPTIMIZE ===
@@ -1558,7 +1566,7 @@ function renderRoutes(data, deliveries) {
                         </span>
                     </div>
                 </div>
-                <a href="${mapsUrl}" target="_blank" rel="noopener" class="btn-maps">🗺 Navegar</a>
+                <button onclick="openMaps('${mapsUrl}')" class="btn-maps">🗺 Navegar</button>
             </div>
             ${rt.stop_info && rt.stop_info.length > 0 ? `
             <div class="stop-list">
