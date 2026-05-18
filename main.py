@@ -13,8 +13,11 @@ import httpx
 # --- CONFIGURACIÓN ---
 SECRET_KEY = "YC_ROUTE_OPTIMIZER_SECRET_2026"
 ALGORITHM = "HS256"
-VALID_USERNAME = "admin"
-VALID_PASSWORD = "admin123"
+
+VALID_USERS = {
+    "admin": "admin123",
+    "DaniPruebas-16": "daniela16"
+}
 
 app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -48,7 +51,8 @@ def verify_token(token: str = Depends(oauth2_scheme)):
 
 @app.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    if form_data.username != VALID_USERNAME or form_data.password != VALID_PASSWORD:
+    password = VALID_USERS.get(form_data.username)
+    if password is None or form_data.password != password:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     token = jwt.encode({"sub": form_data.username}, SECRET_KEY, algorithm=ALGORITHM)
     return {"access_token": token, "token_type": "bearer"}
@@ -127,23 +131,28 @@ def solve_vrp(deliveries, num_vehicles=5, capacity_per_vehicle=25):
             if len(stops) == 0:
                 continue
 
+            # ---- Google Maps URL (formato dirección múltiple) ----
+            # origin y destination = depósito
             origin = f"{PALMARES_DEPOT[0]},{PALMARES_DEPOT[1]}"
-            dest = origin
-            waypoints = route_coords[1:-1]
 
-            # Formato api=1 funciona en móvil y desktop
-            # Google Maps acepta hasta 23 waypoints en este formato
-            wps = waypoints[:23]
+            waypoints = route_coords[1:-1]   # paradas intermedias (sin depot)
+            wps = waypoints[:23]             # Google Maps acepta hasta 23 waypoints
+
+            # Encode "/" en coordenadas para evitar confusión en la URL
+            # Se usa el separador "|" entre waypoints
             wps_str = "|".join(f"{c[0]},{c[1]}" for c in wps)
+
+            # Construir URL con urllib para asegurar encoding correcto
+            from urllib.parse import quote
             maps_url = (
-                f"https://www.google.com/maps/dir/?api=1"
+                "https://www.google.com/maps/dir/?api=1"
                 f"&origin={origin}"
-                f"&destination={dest}"
-                f"&waypoints={wps_str}"
-                f"&travelmode=driving"
+                f"&destination={origin}"
+                f"&waypoints={quote(wps_str, safe=',|')}"
+                "&travelmode=driving"
             )
 
-            km_est = round(total_dist / 1000, 1)  # OSRM dará la distancia real; esto es fallback Haversine
+            km_est = round(total_dist / 1000, 1)
 
             stop_info = []
             for node in route_nodes[1:]:
@@ -171,15 +180,9 @@ def solve_vrp(deliveries, num_vehicles=5, capacity_per_vehicle=25):
 OSRM_BASE = "https://router.project-osrm.org/route/v1/driving"
 
 async def get_osrm_geometry(coords: list) -> list:
-    """
-    Obtiene la geometría real de la ruta por calles usando OSRM.
-    coords: lista de [lat, lon]
-    Retorna lista de [lat, lon] siguiendo las calles.
-    """
     if len(coords) < 2:
         return coords
 
-    # OSRM usa lon,lat (orden invertido)
     coords_str = ";".join(f"{c[1]},{c[0]}" for c in coords)
     url = f"{OSRM_BASE}/{coords_str}?overview=full&geometries=geojson&steps=false"
 
@@ -193,11 +196,9 @@ async def get_osrm_geometry(coords: list) -> list:
             print(f"  [OSRM] Sin ruta válida, usando línea recta.")
             return coords
 
-        # GeoJSON coords vienen como [lon, lat] → invertir a [lat, lon]
         geom = data["routes"][0]["geometry"]["coordinates"]
         road_coords = [[pt[1], pt[0]] for pt in geom]
 
-        # Distancia real por calles en km
         distance_m = data["routes"][0]["distance"]
         km_real = round(distance_m / 1000, 1)
 
@@ -213,28 +214,24 @@ async def optimize(req: RouteRequest, username: str = Depends(verify_token)):
     if not req.deliveries:
         raise HTTPException(status_code=400, detail="No hay paradas para optimizar.")
     try:
-        # 1. Calcular rutas óptimas con OR-Tools (síncrono, en thread pool)
         loop = asyncio.get_event_loop()
         routes = await loop.run_in_executor(
             None, solve_vrp, req.deliveries, req.num_vehicles, req.capacity_per_vehicle
         )
 
-        # 2. Para cada ruta, obtener geometría real de calles via OSRM (en paralelo)
         async def enrich_route(rt):
-            # route_coords ya incluye depot al inicio y al final
-            raw_coords = rt["route"]  # [[lat,lon], ...]
+            raw_coords = rt["route"]
             result = await get_osrm_geometry(raw_coords)
 
             if isinstance(result, tuple):
                 road_coords, km_real = result
                 rt["route"] = road_coords
                 if km_real is not None:
-                    rt["km"] = km_real          # reemplazar estimación Haversine con distancia real
+                    rt["km"] = km_real
                     rt["km_source"] = "osrm"
                 else:
                     rt["km_source"] = "haversine"
             else:
-                # fallback: result es solo coords
                 rt["route"] = result
                 rt["km_source"] = "haversine"
 
@@ -292,7 +289,6 @@ async def gui():
             overflow-x: hidden;
         }
 
-        /* === GRID BACKGROUND (dashboard only) === */
         #dash::before {
             content: '';
             position: fixed;
@@ -324,7 +320,6 @@ async def gui():
             height: 100%;
         }
 
-        /* Vignette */
         #login::after {
             content: '';
             position: absolute;
@@ -347,7 +342,6 @@ async def gui():
             box-shadow: 0 0 80px rgba(0,212,255,0.07), 0 40px 80px rgba(0,0,0,0.6);
         }
 
-        /* LEFT — branding side */
         .login-left {
             flex: 1;
             background: linear-gradient(160deg, rgba(0,30,55,0.92) 0%, rgba(0,15,30,0.97) 100%);
@@ -412,9 +406,7 @@ async def gui():
             margin-bottom: 1rem;
         }
 
-        .ll-tagline span {
-            color: var(--cyan);
-        }
+        .ll-tagline span { color: var(--cyan); }
 
         .ll-desc {
             font-size: 0.8rem;
@@ -460,7 +452,6 @@ async def gui():
             letter-spacing: 0.2em;
         }
 
-        /* RIGHT — form side */
         .login-right {
             width: 360px;
             flex-shrink: 0;
@@ -561,13 +552,6 @@ async def gui():
             margin: 1.5rem 0;
         }
 
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25%  { transform: translateX(-6px); }
-            75%  { transform: translateX(6px); }
-        }
-
-        /* === RESPONSIVE MÓVIL === */
         @media (max-width: 700px) {
             .login-panel {
                 flex-direction: column;
@@ -575,32 +559,19 @@ async def gui():
                 min-height: unset;
                 border-radius: 10px;
             }
-
             .login-left {
                 padding: 1.5rem;
                 border-right: none;
                 border-bottom: 1px solid rgba(0,212,255,0.12);
             }
-
             .ll-hero { padding: 1rem 0; }
-
             .ll-tagline { font-size: 1.1rem; }
-
             .ll-desc { display: none; }
-
             .ll-stats { gap: 0.5rem; }
-
             .ll-stat { padding: 0.5rem 0.6rem; }
-
             .ll-stat-num { font-size: 0.85rem; }
-
             .ll-footer { display: none; }
-
-            .login-right {
-                width: 100%;
-                padding: 1.5rem;
-            }
-
+            .login-right { width: 100%; padding: 1.5rem; }
             .lr-title { font-size: 0.85rem; }
         }
 
@@ -620,7 +591,6 @@ async def gui():
             z-index: 1;
         }
 
-        /* TOPBAR */
         .topbar {
             display: flex;
             align-items: center;
@@ -689,10 +659,7 @@ async def gui():
             transition: border-color 0.3s;
         }
         .stat-chip.active { border-color: var(--border2); }
-        .stat-chip .val {
-            color: var(--cyan);
-            font-weight: 700;
-        }
+        .stat-chip .val { color: var(--cyan); font-weight: 700; }
 
         .btn-logout {
             background: transparent;
@@ -708,7 +675,6 @@ async def gui():
         }
         .btn-logout:hover { border-color: var(--red); color: var(--red); }
 
-        /* PROGRESS BAR */
         .progress-track {
             height: 2px;
             background: var(--bg2);
@@ -726,7 +692,6 @@ async def gui():
             100% { transform: translateX(400%); }
         }
 
-        /* MAIN GRID */
         .main-grid {
             display: grid;
             grid-template-columns: 340px 1fr;
@@ -735,7 +700,6 @@ async def gui():
             flex: 1;
         }
 
-        /* LEFT PANEL */
         .left-panel {
             display: flex;
             flex-direction: column;
@@ -834,7 +798,6 @@ async def gui():
         }
         .btn-run:disabled::before { display: none; }
 
-        /* CONFIG */
         .config-row {
             display: flex;
             align-items: center;
@@ -874,7 +837,6 @@ async def gui():
         }
         input[type=number]:focus { border-color: var(--border2); }
 
-        /* FLEET CARDS */
         .fleet-section-title {
             font-family: 'Space Mono', monospace;
             font-size: 0.5rem;
@@ -984,7 +946,6 @@ async def gui():
         .stop-item:last-child { border-bottom: none; }
         .stop-num { color: var(--text3); min-width: 18px; }
 
-        /* MAP */
         .map-container {
             border-radius: 6px;
             border: 1px solid var(--border);
@@ -993,13 +954,9 @@ async def gui():
             height: calc(100vh - 110px);
             position: relative;
         }
-        #map {
-            width: 100%;
-            height: 100%;
-        }
+        #map { width: 100%; height: 100%; }
         .leaflet-container { background: var(--bg) !important; }
 
-        /* MAP OVERLAY (badge) */
         .map-badge {
             position: absolute;
             top: 1rem;
@@ -1016,7 +973,6 @@ async def gui():
             pointer-events: none;
         }
 
-        /* TOAST */
         #toast {
             position: fixed;
             bottom: 1.5rem;
@@ -1040,42 +996,23 @@ async def gui():
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        /* SCROLLBAR */
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-track { background: var(--bg); }
         ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-        /* === DASHBOARD RESPONSIVE === */
         @media (max-width: 768px) {
             .main-grid {
                 grid-template-columns: 1fr;
                 padding: 0.75rem;
                 gap: 0.75rem;
             }
-
-            .left-panel {
-                max-height: unset;
-                overflow-y: visible;
-            }
-
-            .map-container {
-                min-height: 340px;
-                height: 55vw;
-                max-height: 420px;
-            }
-
-            .topbar {
-                padding: 0.65rem 1rem;
-                flex-wrap: wrap;
-                gap: 0.5rem;
-            }
-
+            .left-panel { max-height: unset; overflow-y: visible; }
+            .map-container { min-height: 340px; height: 55vw; max-height: 420px; }
+            .topbar { padding: 0.65rem 1rem; flex-wrap: wrap; gap: 0.5rem; }
             .brand-name { font-size: 0.75rem; }
             .brand-sub  { display: none; }
-
             .stats-bar { gap: 0.3rem; }
             .stat-chip { padding: 0.25rem 0.55rem; font-size: 0.5rem; }
-
             textarea#inp { height: 160px; }
         }
 
@@ -1093,7 +1030,6 @@ async def gui():
     <canvas id="login-canvas"></canvas>
 
     <div class="login-panel">
-        <!-- LEFT: branding -->
         <div class="login-left">
             <div class="ll-logo">
                 <div class="ll-icon">🗺</div>
@@ -1131,7 +1067,6 @@ async def gui():
             <div class="ll-footer">© 2026 Y&amp;C SECURE SYSTEMS · PALMARES, CR</div>
         </div>
 
-        <!-- RIGHT: form -->
         <div class="login-right">
             <div class="lr-title">Iniciar sesión</div>
             <div class="lr-sub">ACCESO AL SISTEMA DE RUTAS</div>
@@ -1163,7 +1098,6 @@ async def gui():
 <!-- ===== DASHBOARD ===== -->
 <div id="dash">
 
-    <!-- TOPBAR -->
     <div class="topbar">
         <div class="topbar-brand">
             <div class="brand-icon">🗺</div>
@@ -1186,18 +1120,14 @@ async def gui():
         </div>
     </div>
 
-    <!-- PROGRESS -->
     <div class="progress-track" id="progress-track">
         <div class="progress-fill"></div>
     </div>
 
-    <!-- MAIN -->
     <div class="main-grid">
 
-        <!-- LEFT PANEL -->
         <div class="left-panel">
 
-            <!-- Input -->
             <div class="panel-card">
                 <div class="card-label">Datos de entrega</div>
                 <div class="hint">Pegue datos de Excel (Lat, Lon, Nombre) separados por coma, punto y coma, o tabulación.</div>
@@ -1210,7 +1140,6 @@ Desde Excel (tab):
                 <button class="btn-run" id="btn-run" onclick="run()">⚡ OPTIMIZAR RUTAS</button>
             </div>
 
-            <!-- Config -->
             <div class="panel-card">
                 <div class="card-label">Configuración</div>
                 <div class="config-row">
@@ -1229,7 +1158,6 @@ Desde Excel (tab):
                 </div>
             </div>
 
-            <!-- Fleet -->
             <div id="fleet-wrap" style="display:none;">
                 <div class="fleet-section-title">Flota asignada</div>
                 <div id="fleet"></div>
@@ -1237,7 +1165,6 @@ Desde Excel (tab):
 
         </div>
 
-        <!-- MAP -->
         <div class="map-container">
             <div class="map-badge" id="map-badge">BASE · PALMARES</div>
             <div id="map"></div>
@@ -1269,7 +1196,6 @@ const COLORS = [
     resize();
     window.addEventListener('resize', resize);
 
-    // Simulated city nodes (normalized 0..1)
     const NODE_COUNT = 28;
     const nodes = Array.from({length: NODE_COUNT}, (_, i) => ({
         x: 0.05 + Math.random() * 0.9,
@@ -1280,7 +1206,6 @@ const COLORS = [
         pulseSpeed: 0.02 + Math.random() * 0.02
     }));
 
-    // Build route connections (simulate 4 vehicle routes)
     const ROUTE_COLORS = ['#00d4ff', '#00ff9d', '#bd5fff', '#ff8c42', '#ff3366'];
     const routes = [];
     const shuffled = [...nodes.slice(1)];
@@ -1294,12 +1219,11 @@ const COLORS = [
         routes.push({
             color: ROUTE_COLORS[r],
             stops: [nodes[0], ...chunk, nodes[0]],
-            progress: r * 0.25,  // stagger start
+            progress: r * 0.25,
             speed: 0.0015 + Math.random() * 0.001
         });
     }
 
-    // Moving delivery trucks along each route
     const trucks = routes.map(route => ({
         route,
         t: route.progress,
@@ -1312,28 +1236,21 @@ const COLORS = [
         const i = Math.min(Math.floor(seg), total - 1);
         const frac = seg - i;
         const a = stops[i], b = stops[i + 1];
-        return {
-            x: a.x + (b.x - a.x) * frac,
-            y: a.y + (b.y - a.y) * frac
-        };
+        return { x: a.x + (b.x - a.x) * frac, y: a.y + (b.y - a.y) * frac };
     }
 
     function draw(ts) {
         const W = canvas.width, H = canvas.height;
         ctx.clearRect(0, 0, W, H);
-
-        // Dark starfield bg
         ctx.fillStyle = '#020c18';
         ctx.fillRect(0, 0, W, H);
 
-        // Subtle grid
         ctx.strokeStyle = 'rgba(0,212,255,0.04)';
         ctx.lineWidth = 1;
         const grid = 60;
         for (let x = 0; x < W; x += grid) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
         for (let y = 0; y < H; y += grid) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-        // Draw route lines (dashed, faint)
         routes.forEach(rt => {
             ctx.setLineDash([6, 10]);
             ctx.strokeStyle = rt.color + '28';
@@ -1347,13 +1264,10 @@ const COLORS = [
             ctx.setLineDash([]);
         });
 
-        // Draw nodes
         nodes.forEach(n => {
             n.pulse += n.pulseSpeed;
             const px = n.x * W, py = n.y * H;
-
             if (n.isDepot) {
-                // Depot pulse rings
                 [40, 25].forEach((rad, i) => {
                     const alpha = 0.12 - i * 0.04 + Math.sin(n.pulse) * 0.05;
                     ctx.beginPath();
@@ -1362,7 +1276,6 @@ const COLORS = [
                     ctx.lineWidth = 1;
                     ctx.stroke();
                 });
-                // Depot dot
                 ctx.beginPath();
                 ctx.arc(px, py, 8, 0, Math.PI * 2);
                 ctx.fillStyle = '#00d4ff';
@@ -1372,7 +1285,6 @@ const COLORS = [
                 ctx.fillStyle = '#020c18';
                 ctx.fill();
             } else {
-                // Delivery point
                 const alpha = 0.5 + Math.sin(n.pulse) * 0.2;
                 ctx.beginPath();
                 ctx.arc(px, py, n.r + 1.5, 0, Math.PI * 2);
@@ -1385,13 +1297,10 @@ const COLORS = [
             }
         });
 
-        // Draw moving trucks + trails
         trucks.forEach(truck => {
             truck.t = (truck.t + truck.route.speed) % 1;
             const pos = getPos(truck.route.stops, truck.t);
             const px = pos.x * W, py = pos.y * H;
-
-            // Trail
             truck.trail.push({x: px, y: py, age: 0});
             if (truck.trail.length > 30) truck.trail.shift();
             truck.trail.forEach((pt, i) => {
@@ -1402,8 +1311,6 @@ const COLORS = [
                 ctx.fillStyle = truck.route.color + Math.round(alpha * 255).toString(16).padStart(2, '0');
                 ctx.fill();
             });
-
-            // Truck dot
             ctx.beginPath();
             ctx.arc(px, py, 5, 0, Math.PI * 2);
             ctx.fillStyle = truck.route.color;
@@ -1423,13 +1330,11 @@ const COLORS = [
 // === MAP ===
 function initMap() {
     mapObj = L.map('map', { zoomControl: true, preferCanvas: true }).setView([10.0605, -84.4372], 11);
-
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '© OpenStreetMap © Carto',
         maxZoom: 19
     }).addTo(mapObj);
 
-    // Depot marker
     const depotHTML = `
         <div style="width:18px;height:18px;background:#00d4ff;border-radius:50%;
             border:3px solid rgba(255,255,255,0.9);
@@ -1481,7 +1386,6 @@ function logout() {
     document.getElementById('login-err').style.display = 'none';
     document.getElementById('u').value = '';
     document.getElementById('p').value = '';
-    // Reset stats
     ['stat-stops','stat-routes','stat-km'].forEach(id => document.getElementById(id).textContent = '—');
     document.getElementById('fleet').innerHTML = '';
     document.getElementById('fleet-wrap').style.display = 'none';
@@ -1514,6 +1418,18 @@ function parseInput(raw) {
         deliveries.push({ id: i, lat, lon, descripcion: nombre });
     }
     return deliveries;
+}
+
+// === GOOGLE MAPS URL — abre navegación paso a paso ===
+// Usa el formato "dirección múltiple" que funciona en móvil y desktop
+function buildMapsUrl(depot, waypoints) {
+    // Google Maps URL con múltiples destinos encadenados (no necesita API key)
+    // Formato: /maps/dir/origen/wp1/wp2/.../destino_final
+    // Límite práctico: ~25 puntos totales
+
+    const all = [depot, ...waypoints.slice(0, 23), depot];
+    const parts = all.map(c => `${c[0]},${c[1]}`);
+    return "https://www.google.com/maps/dir/" + parts.join('/');
 }
 
 // === OPTIMIZE ===
@@ -1580,6 +1496,7 @@ function renderRoutes(data, deliveries) {
     }
 
     let totalKm = 0;
+    const depot = [10.0605, -84.4372];
 
     data.routes.forEach((rt, i) => {
         const color = COLORS[i % COLORS.length];
@@ -1618,7 +1535,10 @@ function renderRoutes(data, deliveries) {
             layers.push(m);
         });
 
-        // Fleet card
+        // Construir URL de Google Maps desde el frontend con el formato /dir/
+        const waypoints = (rt.stop_info || []).map(s => [s.lat, s.lon]);
+        const mapsUrl = buildMapsUrl(depot, waypoints);
+
         const card = document.createElement('div');
         card.className = 'fleet-card';
         card.style.borderLeftColor = color;
@@ -1638,7 +1558,7 @@ function renderRoutes(data, deliveries) {
                         </span>
                     </div>
                 </div>
-                <a href="${rt.maps_url}" target="_blank" rel="noopener" class="btn-maps">🗺 Navegar</a>
+                <a href="${mapsUrl}" target="_blank" rel="noopener" class="btn-maps">🗺 Navegar</a>
             </div>
             ${rt.stop_info && rt.stop_info.length > 0 ? `
             <div class="stop-list">
@@ -1652,7 +1572,6 @@ function renderRoutes(data, deliveries) {
         document.getElementById('fleet').appendChild(card);
     });
 
-    // Stats
     document.getElementById('stat-stops').textContent = deliveries.length;
     document.getElementById('stat-routes').textContent = data.routes.length;
     document.getElementById('stat-km').textContent = totalKm.toFixed(0);
@@ -1662,13 +1581,11 @@ function renderRoutes(data, deliveries) {
 
     document.getElementById('fleet-wrap').style.display = 'block';
 
-    // Fit map
     const allCoords = data.routes.flatMap(r => r.route);
     if (allCoords.length > 0) {
         mapObj.fitBounds(L.latLngBounds(allCoords), { padding: [30, 30] });
     }
 
-    // Update badge
     document.getElementById('map-badge').textContent =
         `BASE PALMARES · ${data.routes.length} RUTAS · ${deliveries.length} PARADAS`;
 }
@@ -1690,7 +1607,6 @@ function showToast(msg) {
     toastTimer = setTimeout(() => { t.style.display = 'none'; }, 5000);
 }
 
-// Enter en login
 document.addEventListener('keydown', e => {
     if (e.key === 'Enter' && document.getElementById('login').style.display !== 'none') auth();
 });
