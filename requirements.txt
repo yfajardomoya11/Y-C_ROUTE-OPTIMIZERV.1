@@ -5,3 +5,8 @@ python-jose[cryptography]
 ortools
 httpx
 python-multipart
+httpx
+pydantic
+ortools
+uvicorn
+fastapi
