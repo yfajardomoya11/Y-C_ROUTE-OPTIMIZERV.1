@@ -1421,26 +1421,83 @@ function parseInput(raw) {
     return deliveries;
 }
 
-// === GOOGLE MAPS URL ===
-// Formato saddr/daddr con +to: encadenado — activa navegación real en móvil y desktop
-function buildMapsUrl(depot, waypoints) {
-    const fmt = c => `${parseFloat(c[0]).toFixed(6)},${parseFloat(c[1]).toFixed(6)}`;
-
-    const origin = fmt(depot);
-    const wps = waypoints.slice(0, 22); // saddr + hasta 23 daddr total
-
-    if (wps.length === 0) {
-        // Sin paradas intermedias: ir al depot y volver
-        return `https://maps.google.com/maps?saddr=${origin}&daddr=${origin}&dirflg=d`;
-    }
-
-    // daddr encadena todas las paradas + regreso al depot con +to:
-    const destinations = [...wps.map(fmt), origin].join('+to:');
-    return `https://maps.google.com/maps?saddr=${origin}&daddr=${destinations}&dirflg=d`;
+// === WAZE URL — una parada a la vez ===
+function wazeUrl(lat, lon) {
+    return `https://waze.com/ul?ll=${parseFloat(lat).toFixed(6)},${parseFloat(lon).toFixed(6)}&navigate=yes`;
 }
 
-function openMaps(url) {
-    window.open(url, '_blank', 'noopener');
+// Estado de navegación por unidad
+const navState = {};
+
+function startNav(vehicleId) {
+    const state = navState[vehicleId];
+    if (!state) return;
+    state.current = 0;
+    updateNavPanel(vehicleId);
+    openWaze(vehicleId);
+}
+
+function nextStop(vehicleId) {
+    const state = navState[vehicleId];
+    if (!state) return;
+    state.current++;
+    if (state.current >= state.stops.length) {
+        // Todas las paradas completadas — ir al depot (Palmares)
+        window.open(wazeUrl(10.0605, -84.4372), '_blank', 'noopener');
+        markDone(vehicleId);
+        return;
+    }
+    updateNavPanel(vehicleId);
+    openWaze(vehicleId);
+}
+
+function openWaze(vehicleId) {
+    const state = navState[vehicleId];
+    const stop = state.stops[state.current];
+    window.open(wazeUrl(stop.lat, stop.lon), '_blank', 'noopener');
+}
+
+function updateNavPanel(vehicleId) {
+    const state = navState[vehicleId];
+    const panel = document.getElementById(`nav-panel-${vehicleId}`);
+    if (!panel) return;
+    const total = state.stops.length;
+    const cur = state.current;
+    const stop = state.stops[cur];
+    const isLast = cur === total - 1;
+
+    panel.innerHTML = `
+        <div style="background:rgba(0,255,157,0.07);border:1px solid rgba(0,255,157,0.25);
+            border-radius:5px;padding:0.6rem 0.8rem;margin-top:0.5rem;">
+            <div style="font-family:'Space Mono',monospace;font-size:0.5rem;color:var(--green);
+                letter-spacing:0.2em;margin-bottom:0.35rem;">
+                ▶ NAVEGANDO — PARADA ${cur + 1} DE ${total}
+            </div>
+            <div style="font-size:0.75rem;color:#f1f5f9;font-weight:600;margin-bottom:0.5rem;">
+                ${stop.nombre}
+            </div>
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+                <button onclick="openWaze(${vehicleId})" class="btn-maps"
+                    style="background:rgba(0,100,240,0.2);border-color:#0064f0;color:#7cb9ff;">
+                    🔵 Waze
+                </button>
+                <button onclick="nextStop(${vehicleId})" class="btn-maps"
+                    style="background:rgba(0,255,157,0.12);border-color:var(--green);color:var(--green);">
+                    ${isLast ? '🏁 Volver a base' : '⏭ Siguiente parada'}
+                </button>
+            </div>
+        </div>`;
+}
+
+function markDone(vehicleId) {
+    const panel = document.getElementById(`nav-panel-${vehicleId}`);
+    if (!panel) return;
+    panel.innerHTML = `
+        <div style="background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.2);
+            border-radius:5px;padding:0.5rem 0.8rem;margin-top:0.5rem;
+            font-family:'Space Mono',monospace;font-size:0.55rem;color:var(--cyan);">
+            ✅ RUTA COMPLETADA
+        </div>`;
 }
 
 // === OPTIMIZE ===
@@ -1546,9 +1603,12 @@ function renderRoutes(data, deliveries) {
             layers.push(m);
         });
 
-        // Construir URL de Google Maps desde el frontend con el formato /dir/
-        const waypoints = (rt.stop_info || []).map(s => [s.lat, s.lon]);
-        const mapsUrl = buildMapsUrl(depot, waypoints);
+        // Registrar estado de navegación para esta unidad
+        const vehicleId = rt.vehicle;
+        navState[vehicleId] = {
+            stops: rt.stop_info || [],
+            current: 0
+        };
 
         const card = document.createElement('div');
         card.className = 'fleet-card';
@@ -1569,8 +1629,12 @@ function renderRoutes(data, deliveries) {
                         </span>
                     </div>
                 </div>
-                <button onclick="openMaps('${mapsUrl}')" class="btn-maps">🗺 Navegar</button>
+                <button onclick="startNav(${vehicleId})" class="btn-maps"
+                    style="background:rgba(0,100,240,0.2);border-color:#0064f0;color:#7cb9ff;">
+                    🔵 Iniciar en Waze
+                </button>
             </div>
+            <div id="nav-panel-${vehicleId}"></div>
             ${rt.stop_info && rt.stop_info.length > 0 ? `
             <div class="stop-list">
                 ${rt.stop_info.map((s, j) => `
