@@ -1421,84 +1421,39 @@ function parseInput(raw) {
     return deliveries;
 }
 
-// === WAZE URL — una parada a la vez ===
+// === WAZE URL — navega directo al abrir ===
 function wazeUrl(lat, lon) {
     return `https://waze.com/ul?ll=${parseFloat(lat).toFixed(6)},${parseFloat(lon).toFixed(6)}&navigate=yes`;
 }
 
+// === WHATSAPP — envía la ruta completa al chofer ===
+function sendWhatsApp(vehicleId) {
+    const state = navState[vehicleId];
+    if (!state || state.stops.length === 0) return;
+
+    const fecha = new Date().toLocaleDateString('es-CR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    let msg = `🚚 *RUTA UNIDAD ${vehicleId} — ${fecha.toUpperCase()}*\n`;
+    msg += `📍 *${state.stops.length} paradas* | Salida: Base Palmares\n`;
+    msg += `─────────────────────\n`;
+
+    state.stops.forEach((stop, i) => {
+        const url = wazeUrl(stop.lat, stop.lon);
+        msg += `\n*${i + 1}.* ${stop.nombre}\n`;
+        msg += `👉 ${url}\n`;
+    });
+
+    msg += `\n─────────────────────\n`;
+    msg += `🏁 *Al terminar, regresá a base:*\n`;
+    msg += `👉 ${wazeUrl(10.0605, -84.4372)}\n`;
+    msg += `\n_Cada link abre Waze directo en esa parada._`;
+
+    const encoded = encodeURIComponent(msg);
+    window.open(`https://wa.me/?text=${encoded}`, '_blank', 'noopener');
+}
+
 // Estado de navegación por unidad
 const navState = {};
-
-function startNav(vehicleId) {
-    const state = navState[vehicleId];
-    if (!state) return;
-    state.current = 0;
-    updateNavPanel(vehicleId);
-    openWaze(vehicleId);
-}
-
-function nextStop(vehicleId) {
-    const state = navState[vehicleId];
-    if (!state) return;
-    state.current++;
-    if (state.current >= state.stops.length) {
-        // Todas las paradas completadas — ir al depot (Palmares)
-        window.open(wazeUrl(10.0605, -84.4372), '_blank', 'noopener');
-        markDone(vehicleId);
-        return;
-    }
-    updateNavPanel(vehicleId);
-    openWaze(vehicleId);
-}
-
-function openWaze(vehicleId) {
-    const state = navState[vehicleId];
-    const stop = state.stops[state.current];
-    window.open(wazeUrl(stop.lat, stop.lon), '_blank', 'noopener');
-}
-
-function updateNavPanel(vehicleId) {
-    const state = navState[vehicleId];
-    const panel = document.getElementById(`nav-panel-${vehicleId}`);
-    if (!panel) return;
-    const total = state.stops.length;
-    const cur = state.current;
-    const stop = state.stops[cur];
-    const isLast = cur === total - 1;
-
-    panel.innerHTML = `
-        <div style="background:rgba(0,255,157,0.07);border:1px solid rgba(0,255,157,0.25);
-            border-radius:5px;padding:0.6rem 0.8rem;margin-top:0.5rem;">
-            <div style="font-family:'Space Mono',monospace;font-size:0.5rem;color:var(--green);
-                letter-spacing:0.2em;margin-bottom:0.35rem;">
-                ▶ NAVEGANDO — PARADA ${cur + 1} DE ${total}
-            </div>
-            <div style="font-size:0.75rem;color:#f1f5f9;font-weight:600;margin-bottom:0.5rem;">
-                ${stop.nombre}
-            </div>
-            <div style="display:flex;gap:0.5rem;align-items:center;">
-                <button onclick="openWaze(${vehicleId})" class="btn-maps"
-                    style="background:rgba(0,100,240,0.2);border-color:#0064f0;color:#7cb9ff;">
-                    🔵 Waze
-                </button>
-                <button onclick="nextStop(${vehicleId})" class="btn-maps"
-                    style="background:rgba(0,255,157,0.12);border-color:var(--green);color:var(--green);">
-                    ${isLast ? '🏁 Volver a base' : '⏭ Siguiente parada'}
-                </button>
-            </div>
-        </div>`;
-}
-
-function markDone(vehicleId) {
-    const panel = document.getElementById(`nav-panel-${vehicleId}`);
-    if (!panel) return;
-    panel.innerHTML = `
-        <div style="background:rgba(0,212,255,0.07);border:1px solid rgba(0,212,255,0.2);
-            border-radius:5px;padding:0.5rem 0.8rem;margin-top:0.5rem;
-            font-family:'Space Mono',monospace;font-size:0.55rem;color:var(--cyan);">
-            ✅ RUTA COMPLETADA
-        </div>`;
-}
 
 // === OPTIMIZE ===
 async function run() {
@@ -1629,9 +1584,9 @@ function renderRoutes(data, deliveries) {
                         </span>
                     </div>
                 </div>
-                <button onclick="startNav(${vehicleId})" class="btn-maps"
-                    style="background:rgba(0,100,240,0.2);border-color:#0064f0;color:#7cb9ff;">
-                    🔵 Iniciar en Waze
+                <button onclick="sendWhatsApp(${vehicleId})" class="btn-maps"
+                    style="background:rgba(37,211,102,0.15);border-color:#25d366;color:#25d366;font-size:0.6rem;padding:0.5rem 0.9rem;">
+                    📲 Enviar a chofer
                 </button>
             </div>
             <div id="nav-panel-${vehicleId}"></div>
