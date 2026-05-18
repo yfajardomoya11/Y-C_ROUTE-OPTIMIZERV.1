@@ -131,16 +131,17 @@ def solve_vrp(deliveries, num_vehicles=5, capacity_per_vehicle=25):
             dest = origin
             waypoints = route_coords[1:-1]
 
-            if len(waypoints) <= 22:
-                wps_str = "/".join([f"{c[0]},{c[1]}" for c in waypoints])
-                maps_url = f"https://www.google.com/maps/dir/{origin}/{wps_str}/{dest}"
-            else:
-                wps_str = "|".join([f"{c[0]},{c[1]}" for c in waypoints[:22]])
-                maps_url = (
-                    f"https://www.google.com/maps/dir/?api=1"
-                    f"&origin={origin}&destination={dest}"
-                    f"&waypoints={wps_str}&travelmode=driving"
-                )
+            # Formato api=1 funciona en móvil y desktop
+            # Google Maps acepta hasta 23 waypoints en este formato
+            wps = waypoints[:23]
+            wps_str = "|".join(f"{c[0]},{c[1]}" for c in wps)
+            maps_url = (
+                f"https://www.google.com/maps/dir/?api=1"
+                f"&origin={origin}"
+                f"&destination={dest}"
+                f"&waypoints={wps_str}"
+                f"&travelmode=driving"
+            )
 
             km_est = round(total_dist / 1000, 1)  # OSRM dará la distancia real; esto es fallback Haversine
 
@@ -1637,7 +1638,7 @@ function renderRoutes(data, deliveries) {
                         </span>
                     </div>
                 </div>
-                <a href="${rt.maps_url}" target="_blank" class="btn-maps">🗺 Maps</a>
+                <a href="${rt.maps_url}" target="_blank" rel="noopener" class="btn-maps">🗺 Navegar</a>
             </div>
             ${rt.stop_info && rt.stop_info.length > 0 ? `
             <div class="stop-list">
